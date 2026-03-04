@@ -351,9 +351,9 @@ register_block_pattern(
 
 <!-- wp:columns {"className":"notice-board-container"} -->
 <div class="wp-block-columns notice-board-container"><!-- wp:column -->
-<div class="wp-block-column"><!-- wp:html -->
-<div class="notice-list"><div class="notice-item"><div class="notice-date">February 18, 2026</div><a class="notice-title" href="#">New Loan Application Notice</a></div><div class="notice-item"><div class="notice-date">February 10, 2026</div><a class="notice-title" href="#">Weekly Meeting Notice</a></div><div class="notice-item"><div class="notice-date">February 1, 2026</div><a class="notice-title" href="#">Training Program</a></div></div>
-<!-- /wp:html --></div>
+<div class="wp-block-column"><!-- wp:shortcode -->
+[jrdm_notices]
+<!-- /wp:shortcode --></div>
 <!-- /wp:column -->
 
 <!-- wp:column -->

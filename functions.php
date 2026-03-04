@@ -473,6 +473,345 @@ function jrdm_photo_gallery_shortcode( $atts ) {
 add_shortcode( 'jrdm_gallery', 'jrdm_photo_gallery_shortcode' );
 
 /**
+ * Shortcode: JRDM dynamic notices.
+ *
+ * Usage: [jrdm_notices posts="5" category="notice"]
+ * - Mark any post with the "Notice" category (slug: notice) and it will appear here.
+ */
+function jrdm_notices_shortcode( $atts ) {
+	$atts = shortcode_atts(
+		array(
+			'posts'    => 5,
+			'category' => 'notice',
+		),
+		$atts,
+		'jrdm_notices'
+	);
+
+	$limit    = max( 1, (int) $atts['posts'] );
+	$category = sanitize_title( $atts['category'] );
+
+	$query = new WP_Query(
+		array(
+			'post_type'           => 'post',
+			'posts_per_page'      => $limit,
+			'ignore_sticky_posts' => true,
+			'category_name'       => $category,
+		)
+	);
+
+	ob_start();
+
+	if ( $query->have_posts() ) {
+		$latest = null;
+		$others = array();
+
+		while ( $query->have_posts() ) {
+			$query->the_post();
+
+			$item = array(
+				'title'   => get_the_title(),
+				'link'    => get_permalink(),
+				'date'    => get_the_date(),
+				'excerpt' => wp_trim_words( get_the_excerpt(), 25, '…' ),
+			);
+
+			if ( null === $latest ) {
+				$latest = $item;
+			} else {
+				$others[] = $item;
+			}
+		}
+
+		wp_reset_postdata();
+
+		?>
+		<div class="notice-board-dynamic">
+			<div class="notice-board-list-col">
+				<div class="notice-list">
+					<?php if ( $latest ) : ?>
+						<div class="notice-item notice-item-latest">
+							<div class="notice-date"><?php echo esc_html( $latest['date'] ); ?></div>
+							<a class="notice-title" href="<?php echo esc_url( $latest['link'] ); ?>">
+								<?php echo esc_html( $latest['title'] ); ?>
+							</a>
+						</div>
+					<?php endif; ?>
+
+					<?php foreach ( $others as $item ) : ?>
+						<div class="notice-item">
+							<div class="notice-date"><?php echo esc_html( $item['date'] ); ?></div>
+							<a class="notice-title" href="<?php echo esc_url( $item['link'] ); ?>">
+								<?php echo esc_html( $item['title'] ); ?>
+							</a>
+						</div>
+					<?php endforeach; ?>
+				</div>
+			</div>
+
+			<?php if ( $latest ) : ?>
+				<div class="notice-board-featured-col">
+					<div class="notice-featured-card is-style-card">
+						<div class="notice-featured-meta"><?php echo esc_html( $latest['date'] ); ?></div>
+						<h3 class="notice-featured-title">
+							<a href="<?php echo esc_url( $latest['link'] ); ?>">
+								<?php echo esc_html( $latest['title'] ); ?>
+							</a>
+						</h3>
+						<p class="notice-featured-excerpt">
+							<?php echo esc_html( $latest['excerpt'] ); ?>
+						</p>
+						<p class="notice-featured-link">
+							<a href="<?php echo esc_url( $latest['link'] ); ?>">
+								<?php esc_html_e( 'Read full notice →', 'generatepress-child' ); ?>
+							</a>
+						</p>
+					</div>
+				</div>
+			<?php endif; ?>
+		</div>
+		<?php
+	} else {
+		?>
+		<div class="notice-board-dynamic">
+			<div class="notice-board-list-col">
+				<div class="notice-list">
+					<div class="notice-item">
+						<div class="notice-date"><?php echo esc_html( date_i18n( 'F j, Y' ) ); ?></div>
+						<div class="notice-title"><?php esc_html_e( 'No notices available at the moment.', 'generatepress-child' ); ?></div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<?php
+	}
+
+	return ob_get_clean();
+}
+add_shortcode( 'jrdm_notices', 'jrdm_notices_shortcode' );
+
+/**
+ * Register JRDM Committee Member custom post type.
+ *
+ * Used for showing governing body / committee grid via shortcode.
+ */
+function jrdm_register_committee_cpt() {
+	$labels = array(
+		'name'               => __( 'Committee Members', 'generatepress-child' ),
+		'singular_name'      => __( 'Committee Member', 'generatepress-child' ),
+		'add_new'            => __( 'Add New', 'generatepress-child' ),
+		'add_new_item'       => __( 'Add New Committee Member', 'generatepress-child' ),
+		'edit_item'          => __( 'Edit Committee Member', 'generatepress-child' ),
+		'new_item'           => __( 'New Committee Member', 'generatepress-child' ),
+		'view_item'          => __( 'View Committee Member', 'generatepress-child' ),
+		'search_items'       => __( 'Search Committee Members', 'generatepress-child' ),
+		'not_found'          => __( 'No committee members found', 'generatepress-child' ),
+		'not_found_in_trash' => __( 'No committee members found in Trash', 'generatepress-child' ),
+		'menu_name'          => __( 'Committee', 'generatepress-child' ),
+	);
+
+	$args = array(
+		'labels'             => $labels,
+		'public'             => false,
+		'show_ui'            => true,
+		'show_in_menu'       => true,
+		'show_in_rest'       => false,
+		'has_archive'        => false,
+		'hierarchical'       => false,
+		// Simple admin screen: just name, photo, order.
+		'supports'           => array( 'title', 'thumbnail', 'page-attributes' ),
+		'menu_icon'          => 'dashicons-groups',
+		'menu_position'      => 21,
+		'publicly_queryable' => false,
+		'exclude_from_search'=> true,
+		'rewrite'            => false,
+	);
+
+	register_post_type( 'jrdm_committee', $args );
+}
+add_action( 'init', 'jrdm_register_committee_cpt' );
+
+/**
+ * Meta box for committee member details (position, organization).
+ */
+function jrdm_committee_add_meta_box() {
+	add_meta_box(
+		'jrdm_committee_details',
+		__( 'Committee Member Details', 'generatepress-child' ),
+		'jrdm_committee_details_meta_box',
+		'jrdm_committee',
+		'normal',
+		'high'
+	);
+}
+add_action( 'add_meta_boxes', 'jrdm_committee_add_meta_box' );
+
+function jrdm_committee_details_meta_box( $post ) {
+	wp_nonce_field( 'jrdm_committee_details_save', 'jrdm_committee_details_nonce' );
+
+	$position = get_post_meta( $post->ID, '_jrdm_member_position', true );
+	$org      = get_post_meta( $post->ID, '_jrdm_member_org', true );
+	?>
+	<p>
+		<label for="jrdm-member-position"><strong><?php esc_html_e( 'Position / Designation', 'generatepress-child' ); ?></strong></label><br />
+		<input type="text" class="widefat" id="jrdm-member-position" name="jrdm_member_position" value="<?php echo esc_attr( $position ); ?>" placeholder="<?php esc_attr_e( 'Chairman, Vice-Chairman, Member, etc.', 'generatepress-child' ); ?>" />
+	</p>
+	<p>
+		<label for="jrdm-member-org"><strong><?php esc_html_e( 'Organization / Affiliation (optional)', 'generatepress-child' ); ?></strong></label><br />
+		<input type="text" class="widefat" id="jrdm-member-org" name="jrdm_member_org" value="<?php echo esc_attr( $org ); ?>" placeholder="<?php esc_attr_e( 'e.g. JRDM Central Committee', 'generatepress-child' ); ?>" />
+	</p>
+	<p>
+		<?php esc_html_e( 'Use the featured image box on the right to upload the member photo.', 'generatepress-child' ); ?>
+	</p>
+	<?php
+}
+
+/**
+ * Save committee member meta.
+ */
+function jrdm_committee_save_meta( $post_id ) {
+	if ( ! isset( $_POST['jrdm_committee_details_nonce'] ) || ! wp_verify_nonce( $_POST['jrdm_committee_details_nonce'], 'jrdm_committee_details_save' ) ) {
+		return;
+	}
+
+	if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+		return;
+	}
+
+	if ( isset( $_POST['post_type'] ) && 'jrdm_committee' === $_POST['post_type'] ) {
+		if ( ! current_user_can( 'edit_post', $post_id ) ) {
+			return;
+		}
+	} else {
+		return;
+	}
+
+	if ( isset( $_POST['jrdm_member_position'] ) ) {
+		update_post_meta(
+			$post_id,
+			'_jrdm_member_position',
+			sanitize_text_field( wp_unslash( $_POST['jrdm_member_position'] ) )
+		);
+	}
+
+	if ( isset( $_POST['jrdm_member_org'] ) ) {
+		update_post_meta(
+			$post_id,
+			'_jrdm_member_org',
+			sanitize_text_field( wp_unslash( $_POST['jrdm_member_org'] ) )
+		);
+	}
+}
+add_action( 'save_post_jrdm_committee', 'jrdm_committee_save_meta' );
+
+/**
+ * Shortcode: Committee members grid.
+ *
+ * Usage: [jrdm_committee columns="4" limit="12"]
+ */
+function jrdm_committee_shortcode( $atts ) {
+	$atts = shortcode_atts(
+		array(
+			'columns' => 4,
+			'limit'   => 12,
+		),
+		$atts,
+		'jrdm_committee'
+	);
+
+	$columns = max( 1, min( 6, (int) $atts['columns'] ) );
+	$limit   = max( 1, (int) $atts['limit'] );
+
+	$query = new WP_Query(
+		array(
+			'post_type'      => 'jrdm_committee',
+			'posts_per_page' => $limit,
+			'orderby'        => array(
+				'menu_order' => 'ASC',
+				'date'       => 'DESC',
+			),
+		)
+	);
+
+	if ( ! $query->have_posts() ) {
+		return '';
+	}
+
+	ob_start();
+	?>
+	<section class="committee-section">
+		<div class="committee-grid columns-<?php echo (int) $columns; ?>">
+			<?php
+			while ( $query->have_posts() ) :
+				$query->the_post();
+
+				$position = get_post_meta( get_the_ID(), '_jrdm_member_position', true );
+				$org      = get_post_meta( get_the_ID(), '_jrdm_member_org', true );
+				?>
+				<article class="committee-card">
+					<div class="committee-photo">
+						<?php
+						if ( has_post_thumbnail() ) {
+							the_post_thumbnail( 'medium' );
+						}
+						?>
+					</div>
+					<h3 class="committee-name"><?php the_title(); ?></h3>
+					<?php if ( $position ) : ?>
+						<p class="committee-position"><?php echo esc_html( $position ); ?></p>
+					<?php endif; ?>
+					<?php if ( $org ) : ?>
+						<p class="committee-org"><?php echo esc_html( $org ); ?></p>
+					<?php endif; ?>
+				</article>
+				<?php
+			endwhile;
+
+			wp_reset_postdata();
+			?>
+		</div>
+	</section>
+	<?php
+
+	return ob_get_clean();
+}
+add_shortcode( 'jrdm_committee', 'jrdm_committee_shortcode' );
+
+/**
+ * Tidy sidebar widgets: remove default Recent Comments widget.
+ */
+function jrdm_unregister_default_widgets() {
+	// Remove Recent Comments widget from classic widgets list.
+	unregister_widget( 'WP_Widget_Recent_Comments' );
+}
+add_action( 'widgets_init', 'jrdm_unregister_default_widgets', 20 );
+
+/**
+ * Shortcode: Bangladesh holiday calendar (Google public calendar embed).
+ *
+ * Usage: [jrdm_bd_holiday_calendar]
+ * Place this in a Shortcode block inside a sidebar/widget area.
+ */
+function jrdm_bd_holiday_calendar_shortcode() {
+	// Public Google Calendar for Bangladesh Holidays.
+	$calendar_src = 'https://calendar.google.com/calendar/embed?src=en.bd%23holiday%40group.v.calendar.google.com&ctz=Asia%2FDhaka&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=0&showCalendars=0';
+
+	ob_start();
+	?>
+	<div class="jrdm-calendar-embed" aria-label="<?php esc_attr_e( 'Bangladesh Holiday Calendar', 'generatepress-child' ); ?>">
+		<iframe
+			src="<?php echo esc_url( $calendar_src ); ?>"
+			style="border:0"
+			scrolling="no"
+			frameborder="0"></iframe>
+	</div>
+	<?php
+
+	return ob_get_clean();
+}
+add_shortcode( 'jrdm_bd_holiday_calendar', 'jrdm_bd_holiday_calendar_shortcode' );
+
+/**
  * Register JRDM Gallery custom post type (easy admin sidebar menu).
  */
 function jrdm_register_gallery_cpt() {
@@ -688,11 +1027,26 @@ function jrdm_custom_footer_content() {
 	}
 	?>
 	<div class="footer-widgets">
-		<div class="footer-widget">
+		<div class="footer-widget footer-widget-about">
 			<h3><?php esc_html_e( 'About JRDM', 'generatepress-child' ); ?></h3>
 			<p>
 				<?php echo esc_html__( 'JRDM is a national micro finance institute committed to empowering low-income communities through sustainable microcredit and development programs.', 'generatepress-child' ); ?>
 			</p>
+
+			<ul class="footer-contact-list footer-contact-inline">
+				<?php if ( '' !== $phone ) : ?>
+					<li>
+						<span class="label"><?php esc_html_e( 'Phone', 'generatepress-child' ); ?></span>
+						<span class="value"><a href="<?php echo esc_url( 'tel:' . preg_replace( '/\s+/', '', $phone ) ); ?>"><?php echo esc_html( $phone ); ?></a></span>
+					</li>
+				<?php endif; ?>
+				<?php if ( '' !== $email ) : ?>
+					<li>
+						<span class="label"><?php esc_html_e( 'Email', 'generatepress-child' ); ?></span>
+						<span class="value"><a href="<?php echo esc_url( 'mailto:' . $email ); ?>"><?php echo esc_html( $email ); ?></a></span>
+					</li>
+				<?php endif; ?>
+			</ul>
 		</div>
 
 		<div class="footer-widget">
@@ -707,24 +1061,12 @@ function jrdm_custom_footer_content() {
 		</div>
 
 		<div class="footer-widget footer-widget-contact">
-			<h3><?php esc_html_e( 'Contact', 'generatepress-child' ); ?></h3>
+			<h3><?php esc_html_e( 'Address & Social', 'generatepress-child' ); ?></h3>
 			<ul class="footer-contact-list">
 				<?php if ( '' !== $address ) : ?>
 					<li>
 						<span class="label"><?php esc_html_e( 'Address', 'generatepress-child' ); ?></span>
 						<span class="value"><?php echo esc_html( $address ); ?></span>
-					</li>
-				<?php endif; ?>
-				<?php if ( '' !== $phone ) : ?>
-					<li>
-						<span class="label"><?php esc_html_e( 'Phone', 'generatepress-child' ); ?></span>
-						<span class="value"><a href="<?php echo esc_url( 'tel:' . preg_replace( '/\s+/', '', $phone ) ); ?>"><?php echo esc_html( $phone ); ?></a></span>
-					</li>
-				<?php endif; ?>
-				<?php if ( '' !== $email ) : ?>
-					<li>
-						<span class="label"><?php esc_html_e( 'Email', 'generatepress-child' ); ?></span>
-						<span class="value"><a href="<?php echo esc_url( 'mailto:' . $email ); ?>"><?php echo esc_html( $email ); ?></a></span>
 					</li>
 				<?php endif; ?>
 			</ul>
