@@ -7,46 +7,61 @@
 	'use strict';
 
 	/**
-	 * Animate statistics counter
+	 * Animate statistics counter.
+	 * Starts from a value just below target (e.g. 82%) so big numbers finish in fixed time.
 	 */
 	function animateCounter() {
 		$('.stat-number').each(function() {
 			var $this = $(this);
 			var countTo = $this.attr('data-count');
-			
+
 			if (!countTo) {
-				// Extract number from text
 				var text = $this.text().trim();
 				var match = text.match(/[\d,]+/);
 				if (match) {
 					countTo = match[0].replace(/,/g, '');
 				}
 			}
-			
-			if (countTo && !$this.hasClass('animated')) {
-				$this.addClass('animated');
-				
-				// Check if element is in viewport
-				var elementTop = $this.offset().top;
-				var elementBottom = elementTop + $this.outerHeight();
-				var viewportTop = $(window).scrollTop();
-				var viewportBottom = viewportTop + $(window).height();
-				
-				if (elementBottom > viewportTop && elementTop < viewportBottom) {
-					var $obj = $this;
-					var current = 0;
-					var increment = parseInt(countTo) / 50;
-					var timer = setInterval(function() {
-						current += increment;
-						if (current >= parseInt(countTo)) {
-							$obj.text($obj.text().replace(/[\d,]+/, formatNumber(parseInt(countTo))));
-							clearInterval(timer);
-						} else {
-							$obj.text($obj.text().replace(/[\d,]+/, formatNumber(Math.floor(current))));
-						}
-					}, 30);
-				}
+
+			if (!countTo || $this.hasClass('animated')) {
+				return;
 			}
+
+			var target = parseInt(countTo, 10);
+			if (isNaN(target) || target < 0) {
+				return;
+			}
+
+			$this.addClass('animated');
+
+			var elementTop = $this.offset().top;
+			var elementBottom = elementTop + $this.outerHeight();
+			var viewportTop = $(window).scrollTop();
+			var viewportBottom = viewportTop + $(window).height();
+
+			if (elementBottom <= viewportTop || elementTop >= viewportBottom) {
+				return;
+			}
+
+			// Start from slightly below target so animation length is similar for small and large numbers
+			var start = Math.max(0, Math.floor(target * 0.82));
+			var duration = 1200;
+			var stepMs = 30;
+			var steps = Math.max(1, Math.round(duration / stepMs));
+			var increment = (target - start) / steps;
+
+			$this.text(formatNumber(start));
+
+			var current = start;
+			var timer = setInterval(function() {
+				current += increment;
+				if (current >= target) {
+					$this.text(formatNumber(target));
+					clearInterval(timer);
+				} else {
+					$this.text(formatNumber(Math.floor(current)));
+				}
+			}, stepMs);
 		});
 	}
 
@@ -240,7 +255,7 @@
 	});
 
 	/**
-	 * Hero slider
+	 * Hero slider – carousel with arrows, dots, autoplay, pause on hover
 	 */
 	function initHeroSlider() {
 		$('.hero-slider').each(function() {
@@ -253,22 +268,26 @@
 			}
 
 			var current = 0;
+			var timer = null;
+
 			$slides.hide().eq(0).show().addClass('is-active');
 
-			var $dots = $('<div class=\"hero-slider-dots\" />').appendTo($slider);
+			var $dots = $('<div class="hero-slider-dots" role="tablist" />');
+			if ($slider.find('.hero-slider-inner').length) {
+				$slider.find('.hero-slider-inner').after($dots);
+			} else {
+				$slider.append($dots);
+			}
 
 			$slides.each(function(index) {
-				var $dot = $('<button type=\"button\" class=\"hero-slider-dot\" />').appendTo($dots);
+				var $dot = $('<button type="button" class="hero-slider-dot" role="tab" />').appendTo($dots);
 				if (index === 0) {
 					$dot.addClass('is-active');
 				}
-
 				$dot.on('click', function() {
 					goToSlide(index, true);
 				});
 			});
-
-			var timer = setInterval(nextSlide, 7000);
 
 			function nextSlide() {
 				var next = (current + 1) % $slides.length;
@@ -279,18 +298,39 @@
 				if (index === current) {
 					return;
 				}
-
 				$slides.eq(current).removeClass('is-active').fadeOut(400);
 				$slides.eq(index).addClass('is-active').fadeIn(400);
-
 				$dots.find('.hero-slider-dot').removeClass('is-active').eq(index).addClass('is-active');
 				current = index;
-
 				if (resetTimer && timer) {
 					clearInterval(timer);
 					timer = setInterval(nextSlide, 7000);
 				}
 			}
+
+			$slider.find('.hero-slider-prev').on('click', function() {
+				var prev = current - 1;
+				if (prev < 0) {
+					prev = $slides.length - 1;
+				}
+				goToSlide(prev, true);
+			});
+			$slider.find('.hero-slider-next').on('click', function() {
+				goToSlide((current + 1) % $slides.length, true);
+			});
+
+			timer = setInterval(nextSlide, 7000);
+
+			$slider.on('mouseenter', function() {
+				if (timer) {
+					clearInterval(timer);
+					timer = null;
+				}
+			}).on('mouseleave', function() {
+				if (!timer) {
+					timer = setInterval(nextSlide, 7000);
+				}
+			});
 		});
 	}
 

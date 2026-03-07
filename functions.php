@@ -778,6 +778,336 @@ function jrdm_committee_shortcode( $atts ) {
 add_shortcode( 'jrdm_committee', 'jrdm_committee_shortcode' );
 
 /**
+ * Hero Slider: custom post type for carousel slides (admin-managed).
+ */
+function jrdm_register_hero_slider_cpt() {
+	$labels = array(
+		'name'               => _x( 'Hero Slider', 'post type general name', 'generatepress-child' ),
+		'singular_name'      => _x( 'Slide', 'post type singular name', 'generatepress-child' ),
+		'add_new'            => __( 'Add New Slide', 'generatepress-child' ),
+		'add_new_item'       => __( 'Add New Slide', 'generatepress-child' ),
+		'edit_item'          => __( 'Edit Slide', 'generatepress-child' ),
+		'new_item'           => __( 'New Slide', 'generatepress-child' ),
+		'view_item'          => __( 'View Slide', 'generatepress-child' ),
+		'search_items'      => __( 'Search Slides', 'generatepress-child' ),
+		'not_found'          => __( 'No slides found.', 'generatepress-child' ),
+		'not_found_in_trash' => __( 'No slides found in Trash.', 'generatepress-child' ),
+		'menu_name'          => __( 'Hero Slider', 'generatepress-child' ),
+	);
+
+	$args = array(
+		'labels'              => $labels,
+		'public'              => false,
+		'show_ui'             => true,
+		'show_in_menu'        => true,
+		'show_in_rest'        => false,
+		'has_archive'         => false,
+		'hierarchical'        => false,
+		'supports'            => array( 'title', 'thumbnail', 'page-attributes' ),
+		'menu_icon'           => 'dashicons-slides',
+		'menu_position'       => 22,
+		'publicly_queryable'  => false,
+		'exclude_from_search' => true,
+		'rewrite'             => false,
+	);
+
+	register_post_type( 'jrdm_slide', $args );
+}
+add_action( 'init', 'jrdm_register_hero_slider_cpt' );
+
+/**
+ * Hero slide meta box: description, button(s).
+ */
+function jrdm_hero_slide_meta_box() {
+	add_meta_box(
+		'jrdm_hero_slide_details',
+		__( 'Slide Content', 'generatepress-child' ),
+		'jrdm_hero_slide_meta_box_cb',
+		'jrdm_slide',
+		'normal',
+		'high'
+	);
+}
+add_action( 'add_meta_boxes', 'jrdm_hero_slide_meta_box' );
+
+function jrdm_hero_slide_meta_box_cb( $post ) {
+	wp_nonce_field( 'jrdm_hero_slide_save', 'jrdm_hero_slide_nonce' );
+
+	$desc   = get_post_meta( $post->ID, '_jrdm_slide_description', true );
+	$btn1   = get_post_meta( $post->ID, '_jrdm_slide_btn_text', true );
+	$url1   = get_post_meta( $post->ID, '_jrdm_slide_btn_url', true );
+	$btn2   = get_post_meta( $post->ID, '_jrdm_slide_btn2_text', true );
+	$url2   = get_post_meta( $post->ID, '_jrdm_slide_btn2_url', true );
+	?>
+	<p>
+		<label for="jrdm_slide_description"><strong><?php esc_html_e( 'Description / Subtitle', 'generatepress-child' ); ?></strong></label><br>
+		<textarea class="widefat" id="jrdm_slide_description" name="jrdm_slide_description" rows="3" placeholder="<?php esc_attr_e( 'Short tagline or description for this slide.', 'generatepress-child' ); ?>"><?php echo esc_textarea( $desc ); ?></textarea>
+	</p>
+	<p>
+		<label for="jrdm_slide_btn_text"><strong><?php esc_html_e( 'Primary Button Text', 'generatepress-child' ); ?></strong></label><br>
+		<input type="text" class="widefat" id="jrdm_slide_btn_text" name="jrdm_slide_btn_text" value="<?php echo esc_attr( $btn1 ); ?>" placeholder="<?php esc_attr_e( 'e.g. Apply for Loan', 'generatepress-child' ); ?>">
+	</p>
+	<p>
+		<label for="jrdm_slide_btn_url"><strong><?php esc_html_e( 'Primary Button URL', 'generatepress-child' ); ?></strong></label><br>
+		<input type="url" class="widefat" id="jrdm_slide_btn_url" name="jrdm_slide_btn_url" value="<?php echo esc_attr( $url1 ); ?>" placeholder="https://">
+	</p>
+	<p>
+		<label for="jrdm_slide_btn2_text"><strong><?php esc_html_e( 'Secondary Button Text (optional)', 'generatepress-child' ); ?></strong></label><br>
+		<input type="text" class="widefat" id="jrdm_slide_btn2_text" name="jrdm_slide_btn2_text" value="<?php echo esc_attr( $btn2 ); ?>" placeholder="<?php esc_attr_e( 'e.g. Learn More', 'generatepress-child' ); ?>">
+	</p>
+	<p>
+		<label for="jrdm_slide_btn2_url"><strong><?php esc_html_e( 'Secondary Button URL (optional)', 'generatepress-child' ); ?></strong></label><br>
+		<input type="url" class="widefat" id="jrdm_slide_btn2_url" name="jrdm_slide_btn2_url" value="<?php echo esc_attr( $url2 ); ?>" placeholder="https://">
+	</p>
+	<p class="description"><?php esc_html_e( 'Use "Featured Image" on the right to set the slide image. Use "Order" in Page Attributes to order slides.', 'generatepress-child' ); ?></p>
+	<?php
+}
+
+function jrdm_hero_slide_save_meta( $post_id ) {
+	if ( ! isset( $_POST['jrdm_hero_slide_nonce'] ) || ! wp_verify_nonce( $_POST['jrdm_hero_slide_nonce'], 'jrdm_hero_slide_save' ) ) {
+		return;
+	}
+	if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+		return;
+	}
+	if ( isset( $_POST['post_type'] ) && 'jrdm_slide' !== $_POST['post_type'] ) {
+		return;
+	}
+	if ( ! current_user_can( 'edit_post', $post_id ) ) {
+		return;
+	}
+
+	$fields = array(
+		'jrdm_slide_description' => '_jrdm_slide_description',
+		'jrdm_slide_btn_text'    => '_jrdm_slide_btn_text',
+		'jrdm_slide_btn_url'    => '_jrdm_slide_btn_url',
+		'jrdm_slide_btn2_text'  => '_jrdm_slide_btn2_text',
+		'jrdm_slide_btn2_url'   => '_jrdm_slide_btn2_url',
+	);
+	foreach ( $fields as $post_key => $meta_key ) {
+		if ( isset( $_POST[ $post_key ] ) ) {
+			$value = 'jrdm_slide_btn_url' === $post_key || 'jrdm_slide_btn2_url' === $post_key
+				? esc_url_raw( wp_unslash( $_POST[ $post_key ] ) )
+				: sanitize_text_field( wp_unslash( $_POST[ $post_key ] ) );
+			update_post_meta( $post_id, $meta_key, $value );
+		}
+	}
+}
+add_action( 'save_post_jrdm_slide', 'jrdm_hero_slide_save_meta' );
+
+/**
+ * Shortcode: Hero carousel slider (for homepage hero section).
+ *
+ * Usage: [jrdm_hero_slider]
+ * Add slides under Dashboard → Hero Slider. Order via Page Attributes → Order.
+ */
+function jrdm_hero_slider_shortcode() {
+	$query = new WP_Query(
+		array(
+			'post_type'      => 'jrdm_slide',
+			'posts_per_page' => 20,
+			'orderby'        => 'menu_order',
+			'order'          => 'ASC',
+			'post_status'    => 'publish',
+		)
+	);
+
+	if ( ! $query->have_posts() ) {
+		return '';
+	}
+
+	ob_start();
+	?>
+	<div class="hero-slider jrdm-hero-carousel">
+		<button type="button" class="hero-slider-arrow hero-slider-prev" aria-label="<?php esc_attr_e( 'Previous slide', 'generatepress-child' ); ?>">&#10094;</button>
+		<button type="button" class="hero-slider-arrow hero-slider-next" aria-label="<?php esc_attr_e( 'Next slide', 'generatepress-child' ); ?>">&#10095;</button>
+		<div class="hero-slider-inner">
+			<?php
+			$first = true;
+			while ( $query->have_posts() ) {
+				$query->the_post();
+				$desc = get_post_meta( get_the_ID(), '_jrdm_slide_description', true );
+				$btn1 = get_post_meta( get_the_ID(), '_jrdm_slide_btn_text', true );
+				$url1 = get_post_meta( get_the_ID(), '_jrdm_slide_btn_url', true );
+				$btn2 = get_post_meta( get_the_ID(), '_jrdm_slide_btn2_text', true );
+				$url2 = get_post_meta( get_the_ID(), '_jrdm_slide_btn2_url', true );
+				$class = $first ? 'hero-slide is-active' : 'hero-slide';
+				$first = false;
+				?>
+				<div class="<?php echo esc_attr( $class ); ?>">
+					<div class="hero-slide-background">
+						<?php if ( has_post_thumbnail() ) : ?>
+							<?php the_post_thumbnail( 'full', array( 'class' => 'hero-slide-bg-image' ) ); ?>
+						<?php endif; ?>
+					</div>
+					<div class="hero-slide-content-wrap">
+						<div class="hero-slide-content">
+							<h2 class="hero-title"><?php the_title(); ?></h2>
+							<?php if ( $desc ) : ?>
+								<p class="hero-description"><?php echo esc_html( $desc ); ?></p>
+							<?php endif; ?>
+							<?php if ( $btn1 || $btn2 ) : ?>
+								<div class="hero-buttons">
+									<?php if ( $btn1 ) : ?>
+										<a href="<?php echo esc_url( $url1 ? $url1 : '#' ); ?>" class="hero-btn hero-btn-primary"><?php echo esc_html( $btn1 ); ?></a>
+									<?php endif; ?>
+									<?php if ( $btn2 ) : ?>
+										<a href="<?php echo esc_url( $url2 ? $url2 : '#' ); ?>" class="hero-btn hero-btn-secondary"><?php echo esc_html( $btn2 ); ?></a>
+									<?php endif; ?>
+								</div>
+							<?php endif; ?>
+						</div>
+						<?php if ( has_post_thumbnail() ) : ?>
+							<div class="hero-slide-image-col">
+								<?php the_post_thumbnail( 'large', array( 'class' => 'hero-slide-image' ) ); ?>
+							</div>
+						<?php endif; ?>
+					</div>
+				</div>
+				<?php
+			}
+			wp_reset_postdata();
+			?>
+		</div>
+	</div>
+	<?php
+	return ob_get_clean();
+}
+add_shortcode( 'jrdm_hero_slider', 'jrdm_hero_slider_shortcode' );
+
+/**
+ * Counter / Stats: CPT for homepage countable items (Division, District, etc.).
+ */
+function jrdm_register_counter_cpt() {
+	$labels = array(
+		'name'               => _x( 'Counters', 'post type general name', 'generatepress-child' ),
+		'singular_name'      => _x( 'Counter', 'post type singular name', 'generatepress-child' ),
+		'add_new'            => __( 'Add New', 'generatepress-child' ),
+		'add_new_item'       => __( 'Add New Counter', 'generatepress-child' ),
+		'edit_item'          => __( 'Edit Counter', 'generatepress-child' ),
+		'new_item'           => __( 'New Counter', 'generatepress-child' ),
+		'view_item'          => __( 'View Counter', 'generatepress-child' ),
+		'search_items'       => __( 'Search Counters', 'generatepress-child' ),
+		'not_found'          => __( 'No counters found.', 'generatepress-child' ),
+		'not_found_in_trash' => __( 'No counters found in Trash.', 'generatepress-child' ),
+		'menu_name'          => __( 'Counters', 'generatepress-child' ),
+	);
+
+	$args = array(
+		'labels'              => $labels,
+		'public'              => false,
+		'show_ui'             => true,
+		'show_in_menu'        => true,
+		'show_in_rest'        => false,
+		'has_archive'         => false,
+		'hierarchical'        => false,
+		'supports'            => array( 'title', 'page-attributes' ),
+		'menu_icon'           => 'dashicons-chart-bar',
+		'menu_position'       => 23,
+		'publicly_queryable'  => false,
+		'exclude_from_search' => true,
+		'rewrite'             => false,
+	);
+
+	register_post_type( 'jrdm_counter', $args );
+}
+add_action( 'init', 'jrdm_register_counter_cpt' );
+
+/**
+ * Counter meta: numeric value.
+ */
+function jrdm_counter_meta_box() {
+	add_meta_box(
+		'jrdm_counter_value',
+		__( 'Counter Value', 'generatepress-child' ),
+		'jrdm_counter_meta_box_cb',
+		'jrdm_counter',
+		'normal',
+		'high'
+	);
+}
+add_action( 'add_meta_boxes', 'jrdm_counter_meta_box' );
+
+function jrdm_counter_meta_box_cb( $post ) {
+	wp_nonce_field( 'jrdm_counter_save', 'jrdm_counter_nonce' );
+	$value = get_post_meta( $post->ID, '_jrdm_counter_value', true );
+	?>
+	<p>
+		<label for="jrdm_counter_value"><strong><?php esc_html_e( 'Number to display', 'generatepress-child' ); ?></strong></label><br>
+		<input type="number" min="0" step="1" class="widefat" id="jrdm_counter_value" name="jrdm_counter_value" value="<?php echo esc_attr( $value ); ?>" placeholder="e.g. 64">
+	</p>
+	<p class="description"><?php esc_html_e( 'Title above = label (e.g. Divisions, Districts). This number will animate on scroll.', 'generatepress-child' ); ?></p>
+	<?php
+}
+
+function jrdm_counter_save_meta( $post_id ) {
+	if ( ! isset( $_POST['jrdm_counter_nonce'] ) || ! wp_verify_nonce( $_POST['jrdm_counter_nonce'], 'jrdm_counter_save' ) ) {
+		return;
+	}
+	if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+		return;
+	}
+	if ( isset( $_POST['post_type'] ) && 'jrdm_counter' !== $_POST['post_type'] ) {
+		return;
+	}
+	if ( ! current_user_can( 'edit_post', $post_id ) ) {
+		return;
+	}
+	if ( isset( $_POST['jrdm_counter_value'] ) ) {
+		$val = absint( $_POST['jrdm_counter_value'] );
+		update_post_meta( $post_id, '_jrdm_counter_value', $val );
+	}
+}
+add_action( 'save_post_jrdm_counter', 'jrdm_counter_save_meta' );
+
+/**
+ * Shortcode: Dynamic counters with animation.
+ *
+ * Usage: [jrdm_counters]
+ * Add items under Dashboard → Counters. Order via Page Attributes → Order.
+ * Desktop: 4 per row. Counter animates when section comes into view.
+ */
+function jrdm_counters_shortcode() {
+	$query = new WP_Query(
+		array(
+			'post_type'      => 'jrdm_counter',
+			'posts_per_page' => 50,
+			'orderby'        => 'menu_order',
+			'order'          => 'ASC',
+			'post_status'    => 'publish',
+		)
+	);
+
+	if ( ! $query->have_posts() ) {
+		return '';
+	}
+
+	ob_start();
+	?>
+	<section class="jrdm-counters-section stats-bar">
+		<div class="stats-container jrdm-counters-grid">
+			<?php
+			while ( $query->have_posts() ) {
+				$query->the_post();
+				$num = (int) get_post_meta( get_the_ID(), '_jrdm_counter_value', true );
+				$label = get_the_title();
+				?>
+				<div class="stat-box">
+					<span class="stat-number" data-count="<?php echo (int) $num; ?>">0</span>
+					<span class="stat-label"><?php echo esc_html( $label ); ?></span>
+				</div>
+				<?php
+			}
+			wp_reset_postdata();
+			?>
+		</div>
+	</section>
+	<?php
+	return ob_get_clean();
+}
+add_shortcode( 'jrdm_counters', 'jrdm_counters_shortcode' );
+
+/**
  * Tidy sidebar widgets: remove default Recent Comments widget.
  */
 function jrdm_unregister_default_widgets() {
@@ -810,6 +1140,59 @@ function jrdm_bd_holiday_calendar_shortcode() {
 	return ob_get_clean();
 }
 add_shortcode( 'jrdm_bd_holiday_calendar', 'jrdm_bd_holiday_calendar_shortcode' );
+
+/**
+ * Admin: JRDM Shortcodes documentation page.
+ */
+function jrdm_register_shortcodes_help_page() {
+	add_menu_page(
+		__( 'JRDM Shortcodes', 'generatepress-child' ),
+		__( 'JRDM Shortcodes', 'generatepress-child' ),
+		'manage_options',
+		'jrdm-shortcodes',
+		'jrdm_render_shortcodes_help_page',
+		'dashicons-editor-code',
+		59
+	);
+}
+add_action( 'admin_menu', 'jrdm_register_shortcodes_help_page' );
+
+function jrdm_render_shortcodes_help_page() {
+	?>
+	<div class="wrap">
+		<h1><?php esc_html_e( 'JRDM Theme Shortcodes', 'generatepress-child' ); ?></h1>
+		<p><?php esc_html_e( 'Use the following shortcodes to place dynamic content (gallery, notices, committee, calendar, hero slider) anywhere in your pages.', 'generatepress-child' ); ?></p>
+
+		<h2><?php esc_html_e( 'Hero Slider (Homepage Carousel)', 'generatepress-child' ); ?></h2>
+		<p><?php esc_html_e( 'Add slides under "Hero Slider" in the admin. Use on the homepage hero section:', 'generatepress-child' ); ?></p>
+		<code>[jrdm_hero_slider]</code>
+
+		<h2><?php esc_html_e( 'Counters (Stats / Numbers)', 'generatepress-child' ); ?></h2>
+		<p><?php esc_html_e( 'Add counter items under "Counters" in the admin (e.g. Divisions, Districts). Use on homepage:', 'generatepress-child' ); ?></p>
+		<code>[jrdm_counters]</code>
+
+		<h2><?php esc_html_e( 'Photo Gallery', 'generatepress-child' ); ?></h2>
+		<p><?php esc_html_e( 'Create a Gallery item under "Galleries" and then use:', 'generatepress-child' ); ?></p>
+		<code>[jrdm_gallery id="123" columns="4"]</code>
+
+		<h2><?php esc_html_e( 'Notice Board', 'generatepress-child' ); ?></h2>
+		<p><?php esc_html_e( 'Add posts in the "Notice" category and show latest notices:', 'generatepress-child' ); ?></p>
+		<code>[jrdm_notices posts="5" category="notice"]</code>
+
+		<h2><?php esc_html_e( 'Committee Members', 'generatepress-child' ); ?></h2>
+		<p><?php esc_html_e( 'Add members under the "Committee" menu and then use:', 'generatepress-child' ); ?></p>
+		<code>[jrdm_committee columns="4" limit="12"]</code>
+
+		<h2><?php esc_html_e( 'Bangladesh Holiday Calendar (Sidebar)', 'generatepress-child' ); ?></h2>
+		<p><?php esc_html_e( 'Use inside a Shortcode block or widget in the sidebar:', 'generatepress-child' ); ?></p>
+		<code>[jrdm_bd_holiday_calendar]</code>
+
+		<p style="margin-top:24px;">
+			<em><?php esc_html_e( 'Tip: You can copy any shortcode from here and paste it into a Shortcode block on the desired page.', 'generatepress-child' ); ?></em>
+		</p>
+	</div>
+	<?php
+}
 
 /**
  * Register JRDM Gallery custom post type (easy admin sidebar menu).
