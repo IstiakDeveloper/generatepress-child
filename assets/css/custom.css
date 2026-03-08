@@ -524,6 +524,12 @@ small,
 /* ============================================
    Hero Slider (Carousel)
    ============================================ */
+/* When shortcode [jrdm_hero_slider] is on the page, hide the duplicate block-based hero so only one slider shows */
+body:has(.jrdm-hero-carousel) .hero-slider:not(.jrdm-hero-carousel),
+.jrdm-has-hero-shortcode .hero-slider:not(.jrdm-hero-carousel) {
+	display: none !important;
+}
+
 .hero-slider {
 	padding: 0;
 	background-color: var(--jrdm-background);

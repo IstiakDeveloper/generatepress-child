@@ -110,6 +110,11 @@
 		initScrollAnimations();
 		initHeroSlider();
 
+		// When hero shortcode is present, mark body so duplicate block hero can be hidden
+		if ($('.jrdm-hero-carousel').length) {
+			$('body').addClass('jrdm-has-hero-shortcode');
+		}
+
 		// Lightbox for JRDM gallery shortcode with next/previous.
 		var $overlay   = $('<div class="jrdm-lightbox-overlay" aria-hidden="true"></div>');
 		var $backdrop  = $('<div class="jrdm-lightbox-backdrop"></div>').appendTo($overlay);
