@@ -241,6 +241,422 @@ function jrdm_footer_customize_register( $wp_customize ) {
 add_action( 'customize_register', 'jrdm_footer_customize_register' );
 
 /**
+ * JRDM Contact Form – Customizer settings (recipient, success message).
+ */
+function jrdm_contact_form_customize_register( $wp_customize ) {
+	$wp_customize->add_section(
+		'jrdm_contact_form',
+		array(
+			'title'       => __( 'JRDM Contact Form', 'generatepress-child' ),
+			'description' => __( 'Manage contact form recipient and messages.', 'generatepress-child' ),
+			'priority'    => 27,
+		)
+	);
+
+	$wp_customize->add_setting(
+		'jrdm_contact_recipient',
+		array(
+			'default'           => get_option( 'admin_email' ),
+			'sanitize_callback' => 'sanitize_email',
+		)
+	);
+	$wp_customize->add_control(
+		'jrdm_contact_recipient',
+		array(
+			'type'    => 'email',
+			'section' => 'jrdm_contact_form',
+			'label'   => __( 'Recipient email', 'generatepress-child' ),
+		)
+	);
+
+	$wp_customize->add_setting(
+		'jrdm_contact_success_message',
+		array(
+			'default'           => __( 'Thank you. Your message has been sent successfully.', 'generatepress-child' ),
+			'sanitize_callback' => 'sanitize_textarea_field',
+		)
+	);
+	$wp_customize->add_control(
+		'jrdm_contact_success_message',
+		array(
+			'type'    => 'textarea',
+			'section' => 'jrdm_contact_form',
+			'label'   => __( 'Success message', 'generatepress-child' ),
+		)
+	);
+
+	$wp_customize->add_setting(
+		'jrdm_contact_map_embed_url',
+		array(
+			'default'           => '',
+			'sanitize_callback' => 'esc_url_raw',
+		)
+	);
+	$wp_customize->add_control(
+		'jrdm_contact_map_embed_url',
+		array(
+			'type'        => 'url',
+			'section'     => 'jrdm_contact_form',
+			'label'       => __( 'Map embed URL', 'generatepress-child' ),
+			'description' => __( 'Paste the embed URL from Google Maps (Share → Embed a map → copy src="..."). Leave empty to hide map.', 'generatepress-child' ),
+		)
+	);
+}
+add_action( 'customize_register', 'jrdm_contact_form_customize_register' );
+
+/**
+ * Handle contact form submission (run before output).
+ */
+function jrdm_contact_form_process() {
+	if ( ! isset( $_POST['jrdm_contact_nonce'] ) || ! wp_verify_nonce( $_POST['jrdm_contact_nonce'], 'jrdm_contact_form' ) ) {
+		return;
+	}
+	if ( ! isset( $_POST['jrdm_contact_submit'] ) ) {
+		return;
+	}
+
+	$recipient = sanitize_email( get_theme_mod( 'jrdm_contact_recipient', get_option( 'admin_email' ) ) );
+	if ( ! is_email( $recipient ) ) {
+		$recipient = get_option( 'admin_email' );
+	}
+
+	$name    = isset( $_POST['jrdm_contact_name'] ) ? sanitize_text_field( wp_unslash( $_POST['jrdm_contact_name'] ) ) : '';
+	$email   = isset( $_POST['jrdm_contact_email'] ) ? sanitize_email( wp_unslash( $_POST['jrdm_contact_email'] ) ) : '';
+	$phone   = isset( $_POST['jrdm_contact_phone'] ) ? sanitize_text_field( wp_unslash( $_POST['jrdm_contact_phone'] ) ) : '';
+	$subject = isset( $_POST['jrdm_contact_subject'] ) ? sanitize_text_field( wp_unslash( $_POST['jrdm_contact_subject'] ) ) : '';
+	$message = isset( $_POST['jrdm_contact_message'] ) ? sanitize_textarea_field( wp_unslash( $_POST['jrdm_contact_message'] ) ) : '';
+
+	$errors = array();
+	if ( '' === $name ) {
+		$errors[] = __( 'Please enter your name.', 'generatepress-child' );
+	}
+	if ( '' === $email || ! is_email( $email ) ) {
+		$errors[] = __( 'Please enter a valid email address.', 'generatepress-child' );
+	}
+	if ( '' === $message ) {
+		$errors[] = __( 'Please enter your message.', 'generatepress-child' );
+	}
+
+	if ( ! empty( $errors ) ) {
+		set_transient( 'jrdm_contact_errors', $errors, 60 );
+		set_transient( 'jrdm_contact_post', array(
+			'name'    => $name,
+			'email'   => $email,
+			'phone'   => $phone,
+			'subject' => $subject,
+			'message' => $message,
+		), 60 );
+		return;
+	}
+
+	// Save submission in dashboard (Contact Form CPT).
+	$post_title = $subject ? $subject : __( '(No subject)', 'generatepress-child' );
+	$insert     = wp_insert_post(
+		array(
+			'post_type'   => 'jrdm_contact',
+			'post_title'  => $post_title,
+			'post_content' => $message,
+			'post_status' => 'publish',
+			'post_author' => 0,
+		),
+		true
+	);
+	if ( is_wp_error( $insert ) ) {
+		$insert = 0;
+	}
+	if ( $insert && $insert > 0 ) {
+		update_post_meta( $insert, '_jrdm_contact_name', $name );
+		update_post_meta( $insert, '_jrdm_contact_email', $email );
+		update_post_meta( $insert, '_jrdm_contact_phone', $phone );
+	}
+
+	$body = sprintf(
+		"%s: %s\n%s: %s\n%s: %s\n%s: %s\n\n%s",
+		__( 'Name', 'generatepress-child' ),
+		$name,
+		__( 'Email', 'generatepress-child' ),
+		$email,
+		__( 'Phone', 'generatepress-child' ),
+		$phone,
+		__( 'Subject', 'generatepress-child' ),
+		$subject,
+		__( 'Message', 'generatepress-child' ) . ":\n" . $message
+	);
+
+	$mail_subject = sprintf(
+		/* translators: %s: site name */
+		__( '[%s] Contact form submission', 'generatepress-child' ),
+		get_bloginfo( 'name' )
+	);
+
+	$headers = array(
+		'Content-Type: text/plain; charset=UTF-8',
+		'Reply-To: ' . $name . ' <' . $email . '>',
+	);
+
+	$sent = wp_mail( $recipient, $mail_subject, $body, $headers );
+
+	// Success if saved to dashboard; email is best-effort.
+	if ( $insert && $insert > 0 ) {
+		set_transient( 'jrdm_contact_success', 1, 60 );
+	} elseif ( $sent ) {
+		set_transient( 'jrdm_contact_success', 1, 60 );
+	} else {
+		set_transient( 'jrdm_contact_errors', array( __( 'Failed to send. Please try again or email us directly.', 'generatepress-child' ) ), 60 );
+	}
+}
+add_action( 'init', 'jrdm_contact_form_process', 5 );
+
+/**
+ * Register Contact Form submissions CPT (dashboard: Contact Form menu).
+ */
+function jrdm_register_contact_cpt() {
+	$labels = array(
+		'name'               => _x( 'Contacts', 'post type general name', 'generatepress-child' ),
+		'singular_name'      => _x( 'Contact', 'post type singular name', 'generatepress-child' ),
+		'menu_name'          => __( 'Contact Form', 'generatepress-child' ),
+		'all_items'          => __( 'All Contacts', 'generatepress-child' ),
+		'view_item'          => __( 'View Contact', 'generatepress-child' ),
+		'edit_item'          => __( 'View / Edit Contact', 'generatepress-child' ),
+		'search_items'       => __( 'Search Contacts', 'generatepress-child' ),
+		'not_found'          => __( 'No contacts found', 'generatepress-child' ),
+		'not_found_in_trash' => __( 'No contacts in Trash', 'generatepress-child' ),
+	);
+
+	$args = array(
+		'labels'             => $labels,
+		'public'             => false,
+		'show_ui'            => true,
+		'show_in_menu'       => true,
+		'show_in_rest'       => false,
+		'has_archive'        => false,
+		'hierarchical'       => false,
+		'supports'           => array( 'title', 'editor' ),
+		'menu_icon'          => 'dashicons-email-alt',
+		'menu_position'     => 22,
+		'publicly_queryable' => false,
+		'rewrite'            => false,
+		'capability_type'    => 'post',
+	);
+
+	register_post_type( 'jrdm_contact', $args );
+}
+add_action( 'init', 'jrdm_register_contact_cpt' );
+
+/**
+ * Contact list table: show Name, Email, Subject, Date.
+ */
+function jrdm_contact_list_columns( $columns ) {
+	$new = array();
+	$new['cb'] = $columns['cb'];
+	$new['title'] = __( 'Subject', 'generatepress-child' );
+	$new['jrdm_contact_name'] = __( 'Name', 'generatepress-child' );
+	$new['jrdm_contact_email'] = __( 'Email', 'generatepress-child' );
+	$new['date'] = $columns['date'];
+	return $new;
+}
+function jrdm_contact_list_column_content( $column, $post_id ) {
+	if ( 'jrdm_contact_name' === $column ) {
+		echo esc_html( get_post_meta( $post_id, '_jrdm_contact_name', true ) );
+	}
+	if ( 'jrdm_contact_email' === $column ) {
+		$email = get_post_meta( $post_id, '_jrdm_contact_email', true );
+		if ( $email ) {
+			echo '<a href="mailto:' . esc_attr( $email ) . '">' . esc_html( $email ) . '</a>';
+		}
+	}
+}
+add_filter( 'manage_jrdm_contact_posts_columns', 'jrdm_contact_list_columns' );
+add_action( 'manage_jrdm_contact_posts_custom_column', 'jrdm_contact_list_column_content', 10, 2 );
+
+/**
+ * Meta box: Sender details (name, email, phone) on Contact edit screen.
+ */
+function jrdm_contact_add_meta_box() {
+	add_meta_box(
+		'jrdm_contact_sender',
+		__( 'Sender details', 'generatepress-child' ),
+		'jrdm_contact_sender_meta_box',
+		'jrdm_contact',
+		'side',
+		'high'
+	);
+}
+function jrdm_contact_sender_meta_box( $post ) {
+	$name  = get_post_meta( $post->ID, '_jrdm_contact_name', true );
+	$email = get_post_meta( $post->ID, '_jrdm_contact_email', true );
+	$phone = get_post_meta( $post->ID, '_jrdm_contact_phone', true );
+	?>
+	<p><strong><?php esc_html_e( 'Name', 'generatepress-child' ); ?></strong><br><?php echo esc_html( $name ); ?></p>
+	<p><strong><?php esc_html_e( 'Email', 'generatepress-child' ); ?></strong><br><a href="mailto:<?php echo esc_attr( $email ); ?>"><?php echo esc_html( $email ); ?></a></p>
+	<p><strong><?php esc_html_e( 'Phone', 'generatepress-child' ); ?></strong><br><?php echo esc_html( $phone ); ?></p>
+	<?php
+}
+add_action( 'add_meta_boxes', 'jrdm_contact_add_meta_box' );
+
+/**
+ * Hide "Add New" for Contact Form (submissions only from front-end form).
+ */
+function jrdm_contact_hide_add_new() {
+	global $submenu;
+	if ( isset( $submenu['edit.php?post_type=jrdm_contact'] ) ) {
+		foreach ( $submenu['edit.php?post_type=jrdm_contact'] as $key => $item ) {
+			if ( isset( $item[2] ) && 'post-new.php?post_type=jrdm_contact' === $item[2] ) {
+				unset( $submenu['edit.php?post_type=jrdm_contact'][ $key ] );
+				break;
+			}
+		}
+	}
+}
+add_action( 'admin_menu', 'jrdm_contact_hide_add_new', 999 );
+
+/**
+ * Contact Form menu: show submission count in sidebar.
+ */
+function jrdm_contact_menu_count() {
+	global $menu;
+	$count = (int) wp_count_posts( 'jrdm_contact' )->publish;
+	foreach ( $menu as $key => $item ) {
+		if ( isset( $item[2] ) && 'edit.php?post_type=jrdm_contact' === $item[2] ) {
+			if ( $count > 0 ) {
+				$menu[ $key ][0] = esc_html__( 'Contact Form', 'generatepress-child' ) . ' <span class="awaiting-mod count-' . (int) $count . '"><span class="pending-count">' . number_format_i18n( $count ) . '</span></span>';
+			}
+			break;
+		}
+	}
+}
+add_action( 'admin_menu', 'jrdm_contact_menu_count', 1000 );
+
+/**
+ * Shortcode: Professional contact form.
+ *
+ * Usage: [jrdm_contact_form]
+ * Manage recipient and success message under Appearance → Customize → JRDM Contact Form.
+ * Shows phone, email, address from Appearance → Customize → JRDM Footer.
+ */
+function jrdm_contact_form_shortcode() {
+	$success = get_transient( 'jrdm_contact_success' );
+	$errors  = get_transient( 'jrdm_contact_errors' );
+	$posted  = get_transient( 'jrdm_contact_post' );
+
+	$success_msg = get_theme_mod( 'jrdm_contact_success_message', __( 'Thank you. Your message has been sent successfully.', 'generatepress-child' ) );
+
+	// Delete transients only after we've used them for output (so success/errors show once).
+	$show_success = (bool) $success;
+	$show_errors  = is_array( $errors ) ? $errors : array();
+	$show_posted  = is_array( $posted ) ? $posted : array();
+
+	if ( $success ) {
+		delete_transient( 'jrdm_contact_success' );
+	}
+	if ( $errors ) {
+		delete_transient( 'jrdm_contact_errors' );
+	}
+	if ( $posted ) {
+		delete_transient( 'jrdm_contact_post' );
+	}
+
+	// Contact info from Customizer (JRDM Footer + Contact Form map).
+	$contact_phone   = trim( (string) get_theme_mod( 'jrdm_footer_phone', '+880-2587-722361' ) );
+	$contact_email   = trim( (string) get_theme_mod( 'jrdm_footer_email', 'jrdmngo95@gmail.com' ) );
+	$contact_map_url  = trim( (string) get_theme_mod( 'jrdm_contact_map_embed_url', '' ) );
+
+	ob_start();
+
+	if ( $show_success ) {
+		?>
+		<div class="jrdm-contact-form-wrap">
+			<div class="jrdm-contact-form-message jrdm-contact-success" role="alert">
+				<?php echo esc_html( $success_msg ); ?>
+			</div>
+		</div>
+		<?php
+		return ob_get_clean();
+	}
+
+	?>
+	<div class="jrdm-contact-form-section">
+		<?php if ( $contact_phone || $contact_email ) : ?>
+			<div class="jrdm-contact-info-bar">
+				<?php if ( $contact_phone ) : ?>
+					<div class="jrdm-contact-info-item">
+						<span class="jrdm-contact-info-icon" aria-hidden="true"><?php echo wp_kses( '&#x260E;', array() ); ?></span>
+						<div class="jrdm-contact-info-content">
+							<span class="jrdm-contact-info-label"><?php esc_html_e( 'Phone', 'generatepress-child' ); ?></span>
+							<a href="tel:<?php echo esc_attr( preg_replace( '/\s+/', '', $contact_phone ) ); ?>"><?php echo esc_html( $contact_phone ); ?></a>
+						</div>
+					</div>
+				<?php endif; ?>
+				<?php if ( $contact_email ) : ?>
+					<div class="jrdm-contact-info-item">
+						<span class="jrdm-contact-info-icon" aria-hidden="true">&#x2709;</span>
+						<div class="jrdm-contact-info-content">
+							<span class="jrdm-contact-info-label"><?php esc_html_e( 'Email', 'generatepress-child' ); ?></span>
+							<a href="mailto:<?php echo esc_attr( $contact_email ); ?>"><?php echo esc_html( $contact_email ); ?></a>
+						</div>
+					</div>
+				<?php endif; ?>
+			</div>
+		<?php endif; ?>
+		<?php if ( $contact_map_url ) : ?>
+			<div class="jrdm-contact-map-block">
+				<span class="jrdm-contact-info-label"><?php esc_html_e( 'Find us', 'generatepress-child' ); ?></span>
+				<div class="jrdm-contact-map-embed">
+					<iframe src="<?php echo esc_url( $contact_map_url ); ?>" width="100%" height="280" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="<?php esc_attr_e( 'Location map', 'generatepress-child' ); ?>"></iframe>
+				</div>
+			</div>
+		<?php endif; ?>
+
+		<div class="jrdm-contact-form-wrap">
+		<?php if ( ! empty( $show_errors ) ) : ?>
+			<ul class="jrdm-contact-form-message jrdm-contact-errors" role="alert">
+				<?php foreach ( $show_errors as $err ) : ?>
+					<li><?php echo esc_html( $err ); ?></li>
+				<?php endforeach; ?>
+			</ul>
+		<?php endif; ?>
+
+		<form id="jrdm-contact-form" class="jrdm-contact-form" method="post" action="<?php echo esc_url( get_permalink() ); ?>#jrdm-contact-form">
+			<?php wp_nonce_field( 'jrdm_contact_form', 'jrdm_contact_nonce' ); ?>
+
+			<p class="jrdm-form-row jrdm-form-row-half">
+				<label for="jrdm_contact_name"><?php esc_html_e( 'Name', 'generatepress-child' ); ?> <span class="required">*</span></label>
+				<input type="text" id="jrdm_contact_name" name="jrdm_contact_name" value="<?php echo esc_attr( isset( $show_posted['name'] ) ? $show_posted['name'] : '' ); ?>" required>
+			</p>
+
+			<p class="jrdm-form-row jrdm-form-row-half">
+				<label for="jrdm_contact_email"><?php esc_html_e( 'Email', 'generatepress-child' ); ?> <span class="required">*</span></label>
+				<input type="email" id="jrdm_contact_email" name="jrdm_contact_email" value="<?php echo esc_attr( isset( $show_posted['email'] ) ? $show_posted['email'] : '' ); ?>" required>
+			</p>
+
+			<p class="jrdm-form-row jrdm-form-row-half">
+				<label for="jrdm_contact_phone"><?php esc_html_e( 'Phone', 'generatepress-child' ); ?></label>
+				<input type="tel" id="jrdm_contact_phone" name="jrdm_contact_phone" value="<?php echo esc_attr( isset( $show_posted['phone'] ) ? $show_posted['phone'] : '' ); ?>">
+			</p>
+
+			<p class="jrdm-form-row jrdm-form-row-half">
+				<label for="jrdm_contact_subject"><?php esc_html_e( 'Subject', 'generatepress-child' ); ?></label>
+				<input type="text" id="jrdm_contact_subject" name="jrdm_contact_subject" value="<?php echo esc_attr( isset( $show_posted['subject'] ) ? $show_posted['subject'] : '' ); ?>">
+			</p>
+
+			<p class="jrdm-form-row">
+				<label for="jrdm_contact_message"><?php esc_html_e( 'Message', 'generatepress-child' ); ?> <span class="required">*</span></label>
+				<textarea id="jrdm_contact_message" name="jrdm_contact_message" rows="5" required><?php echo esc_textarea( isset( $show_posted['message'] ) ? $show_posted['message'] : '' ); ?></textarea>
+			</p>
+
+			<p class="jrdm-form-row jrdm-form-submit">
+				<button type="submit" name="jrdm_contact_submit" class="jrdm-contact-submit"><?php esc_html_e( 'Send Message', 'generatepress-child' ); ?></button>
+			</p>
+		</form>
+		</div>
+	</div>
+	<?php
+
+	return ob_get_clean();
+}
+add_shortcode( 'jrdm_contact_form', 'jrdm_contact_form_shortcode' );
+
+/**
  * Render JRDM top bar (code-first, no widget required).
  */
 function jrdm_render_top_bar() {
@@ -1161,7 +1577,7 @@ function jrdm_render_shortcodes_help_page() {
 	?>
 	<div class="wrap">
 		<h1><?php esc_html_e( 'JRDM Theme Shortcodes', 'generatepress-child' ); ?></h1>
-		<p><?php esc_html_e( 'Use the following shortcodes to place dynamic content (gallery, notices, committee, calendar, hero slider) anywhere in your pages.', 'generatepress-child' ); ?></p>
+		<p><?php esc_html_e( 'Use the following shortcodes to place dynamic content (gallery, notices, committee, contact form, calendar, hero slider) anywhere in your pages.', 'generatepress-child' ); ?></p>
 
 		<h2><?php esc_html_e( 'Hero Slider (Homepage Carousel)', 'generatepress-child' ); ?></h2>
 		<p><?php esc_html_e( 'Add slides under "Hero Slider" in the admin. Use on the homepage hero section:', 'generatepress-child' ); ?></p>
@@ -1182,6 +1598,10 @@ function jrdm_render_shortcodes_help_page() {
 		<h2><?php esc_html_e( 'Committee Members', 'generatepress-child' ); ?></h2>
 		<p><?php esc_html_e( 'Add members under the "Committee" menu and then use:', 'generatepress-child' ); ?></p>
 		<code>[jrdm_committee columns="4" limit="12"]</code>
+
+		<h2><?php esc_html_e( 'Contact Form', 'generatepress-child' ); ?></h2>
+		<p><?php esc_html_e( 'Professional contact form (Name, Email, Phone, Subject, Message). Manage recipient email and success message under Appearance → Customize → JRDM Contact Form.', 'generatepress-child' ); ?></p>
+		<code>[jrdm_contact_form]</code>
 
 		<h2><?php esc_html_e( 'Bangladesh Holiday Calendar (Sidebar)', 'generatepress-child' ); ?></h2>
 		<p><?php esc_html_e( 'Use inside a Shortcode block or widget in the sidebar:', 'generatepress-child' ); ?></p>
