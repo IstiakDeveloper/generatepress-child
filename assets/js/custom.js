@@ -82,9 +82,6 @@
 				entries.forEach(function(entry) {
 					if (entry.isIntersecting) {
 						var $target = $(entry.target);
-						if ($target.hasClass('stat-number') && !$target.hasClass('animated')) {
-							animateCounter();
-						}
 						$target.addClass('fade-in');
 					}
 				});
@@ -98,10 +95,16 @@
 			});
 		} else {
 			// Fallback for older browsers
-			$(window).on('scroll', function() {
+			$(window).on('scroll resize', function() {
 				animateCounter();
 			});
 		}
+
+		// Always run counters on load + scroll/resize so they can't get "stuck" at 0.
+		$(window).on('load scroll resize', function() {
+			animateCounter();
+		});
+		animateCounter();
 	}
 
 	/**
