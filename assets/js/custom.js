@@ -32,8 +32,6 @@
 				return;
 			}
 
-			$this.addClass('animated');
-
 			var elementTop = $this.offset().top;
 			var elementBottom = elementTop + $this.outerHeight();
 			var viewportTop = $(window).scrollTop();
@@ -42,6 +40,9 @@
 			if (elementBottom <= viewportTop || elementTop >= viewportBottom) {
 				return;
 			}
+
+			// Mark as animated only when we're actually going to animate it.
+			$this.addClass('animated');
 
 			// Start from slightly below target so animation length is similar for small and large numbers
 			var start = Math.max(0, Math.floor(target * 0.82));
